@@ -18,19 +18,36 @@ scripts:
   #   Melos Lifecycle
   #
 
-  postbootstrap: |
-    dart pub run build_runner build
+  # postbootstrap: |
+  #   dart pub run build_runner build
     
   postclean: |
+    echo "Cleaning previous secrets repo..."
+    rm -rf ./.secrets
+    
     melos exec -c 6 -- "flutter clean"
 
   #
   #   Setup
   #
 
-  cleandeep:
+  clean:deep:
     description: Clean things very deeply, can be used to establish "pristine checkout" status.
     run: git clean -x -d -f -q
+      
+  setup:secrets:
+    description: |
+      Clone secrets repo.
+      For local development, use .env to set SECRETS_GITHUB_TOKEN and SECRETS_GITHUB_PATH.
+    run: |
+      echo "Exporting environment variable, if .env exists..."
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs)
+
+      echo "Cleaning previous secrets repo..."
+      rm -rf ./.secrets
+
+      echo "Using '$SECRETS_GITHUB_PATH'..."
+      git clone https://$SECRETS_GITHUB_TOKEN@github.com/$SECRETS_GITHUB_PATH ./.secrets
   
   #
   #   Hygiene
@@ -39,7 +56,7 @@ scripts:
   lint:all:
     description: Run all lint checks.
     run: |
-      melos run analyze && \
+      melos run analyze
       melos run format
 
   analyze:
