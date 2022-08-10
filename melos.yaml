@@ -1,0 +1,61 @@
+name: method
+repository: https://github.com/thipokch/method
+
+packages:
+  - '*'
+  - packages/**
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+    runPubGetInParallel: false
+    # It seems so that running "pub get" in parallel cause race condition.
+    # See: https://github.com/dart-lang/pub/issues/3404).
+
+scripts:
+
+  #
+  #   Melos Lifecycle
+  #
+
+  postbootstrap: |
+    dart pub run build_runner build
+    
+  postclean: |
+    melos exec -c 6 -- "flutter clean"
+
+  #
+  #   Setup
+  #
+
+  cleandeep:
+    description: Clean things very deeply, can be used to establish "pristine checkout" status.
+    run: git clean -x -d -f -q
+  
+  #
+  #   Hygiene
+  #
+
+  lint:all:
+    description: Run all lint checks.
+    run: |
+      melos run analyze && \
+      melos run format
+
+  analyze:
+    # We are setting the concurrency to 1 because a higher concurrency can crash
+    # the analysis server on low performance machines (like GitHub Actions).
+    description: |
+      Run `flutter analyze` in all packages.
+       - Note: you can also rely on your IDEs Dart Analysis / Issues window.
+    run: |
+      melos exec -c 1 -- \
+        flutter analyze . --fatal-infos
+
+  format:
+    description: |
+      Run `flutter format` in all packages.
+        - Note: Exits with non-zero exit code if formatting is needed.
+    run: |
+      melos exec -c 1 -- \
+          flutter format --output=none --set-exit-if-changed .
