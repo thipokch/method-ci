@@ -18,20 +18,119 @@ scripts:
   #   Melos Lifecycle
   #
 
-  postbootstrap: |
-    dart pub run build_runner build
-    
   postclean: |
+    echo "Cleaning previous secrets repo..."
+    rm -rf ./.secrets
+
     melos exec -c 6 -- "flutter clean"
 
   #
   #   Setup
   #
 
-  cleandeep:
+  clean:deep:
     description: Clean things very deeply, can be used to establish "pristine checkout" status.
     run: git clean -x -d -f -q
+      
+  setup:secrets:
+    description: |
+      Clone secrets repo.
+      For local development, use .env to set variables:
+        SECRETS_GITHUB_TOKEN - Personal acccess token.
+        SECRETS_GITHUB_PATH - Path of Github repo.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      echo "Cleaning previous secrets repo..."
+      rm -rf ./.secrets
+
+      echo "Using '$SECRETS_GITHUB_PATH'..."
+      git clone https://$SECRETS_GITHUB_TOKEN@github.com/$SECRETS_GITHUB_PATH ./.secrets
+
+  setup:secrets:match:
+    description: |
+      Setup match (from fastlane) based on cloned secrets repo.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      export MATCH_GIT_URL=files://$MELOS_ROOT_PATH/.secrets
+      echo "MATCH_GIT_URL set to $MATCH_GIT_URL"
+
+      cd ios
+      bundle exec
   
+  setup:secrets:google:
+    description: |
+      Decode and decrypt google services config in cloned secrets repo.
+      For local development, use .env to set variables:
+        SECRETS_PASSWORD - Encryption passphrase.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_REPO'..."
+
+      for f in $(find $SECRETS_REPO -name '*.enc'); do 
+        echo "Decrypting ${f%.enc}..."
+        openssl aes-256-cbc -md md5 -d -a -v -k $SECRETS_PASSWORD -in $f -out ${f%.enc}
+      done
+      
+  setup:android:google:
+    description: |
+      Copies decrypted google services config from cloned secrets repo to android directory.
+    run: |
+      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_REPO'..."
+
+      export SECRETS_DIR=$SECRETS_REPO/google/android/
+      export SOURCE_DIR=$MELOS_ROOT_PATH/android/app/src/
+
+      echo "Copying all google services config files under ${SECRETS_DIR} to ${SOURCE_DIR}"
+      cp -v -r "${SECRETS_DIR}"* "${SOURCE_DIR}"
+
+      for f in $(find $SOURCE_DIR -name '*.enc'); do 
+        rm -rfv $f | xargs echo "Removed $1"
+      done
+
+  setup:ios:google:
+    description: |
+      Copies decrypted google services config from cloned secrets repo to ios directory.
+    run: |
+      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_REPO'..."
+
+      export SECRETS_DIR=$SECRETS_REPO/google/darwin/
+      export SOURCE_DIR=$MELOS_ROOT_PATH/ios/
+
+      echo "Copying all google services config files under ${SECRETS_DIR} to ${SOURCE_DIR}"
+      cp -v -r "${SECRETS_DIR}"* "${SOURCE_DIR}"
+
+      for f in $(find $SOURCE_DIR -name '*.enc'); do 
+        rm -rfv $f | xargs echo "Removed $1"
+      done
+
+  setup:web:google:
+    description: |
+      Copies decrypted google services config from cloned secrets repo to web directory.
+    run: |
+      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_REPO'..."
+
+      export SECRETS_DIR=$SECRETS_REPO/google/web/
+      export SOURCE_DIR=$MELOS_ROOT_PATH/web/
+
+      echo "Copying all google services config files under ${SECRETS_DIR} to ${SOURCE_DIR}"
+      cp -v -r "${SECRETS_DIR}"* "${SOURCE_DIR}"
+
+      for f in $(find $SOURCE_DIR -name '*.enc'); do 
+        rm -rfv $f | xargs echo "Removed $1"
+      done
+
+
+
   #
   #   Hygiene
   #
@@ -39,7 +138,7 @@ scripts:
   lint:all:
     description: Run all lint checks.
     run: |
-      melos run analyze && \
+      melos run analyze
       melos run format
 
   analyze:
