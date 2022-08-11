@@ -18,6 +18,9 @@ scripts:
   #   Melos Lifecycle
   #
 
+  postbootstrap: |
+    melos run setup:githook
+
   postclean: |
     echo "Cleaning previous secrets repo..."
     rm -rf ./.secrets
@@ -31,6 +34,11 @@ scripts:
   clean:deep:
     description: Clean things very deeply, can be used to establish "pristine checkout" status.
     run: git clean -x -d -f -q
+
+  setup:githook:
+    run: |
+      chmod -R +x .githook/
+      git config core.hooksPath .githook/
       
   setup:secrets:
     description: |
@@ -133,6 +141,16 @@ scripts:
   #   Hygiene
   #
 
+  check:quality:
+    description: Run all targets generally expected in CI for a full local quality check.
+    run: |
+      melos run clean:deep -- --exclude=.env
+      melos clean
+      melos bootstrap
+      melos run lint:all
+    # melos run build:all
+    # melos run test:all
+
   lint:all:
     description: Run all lint checks.
     run: |
@@ -163,6 +181,7 @@ scripts:
         VERSION - semver version
     run: |
       dart ./script/version_semver.dart
+
   version:build:
     description: 
       Bump build number
