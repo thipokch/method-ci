@@ -82,8 +82,8 @@ scripts:
     description: |
       Copies decrypted google services config from cloned secrets repo to android directory.
     run: |
-      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_REPO'..."
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
 
       export SECRETS_DIR=$SECRETS_REPO/google/android/
       export SOURCE_DIR=$MELOS_ROOT_PATH/android/app/src/
@@ -99,8 +99,8 @@ scripts:
     description: |
       Copies decrypted google services config from cloned secrets repo to ios directory.
     run: |
-      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_REPO'..."
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
 
       export SECRETS_DIR=$SECRETS_REPO/google/darwin/
       export SOURCE_DIR=$MELOS_ROOT_PATH/ios/
@@ -116,8 +116,8 @@ scripts:
     description: |
       Copies decrypted google services config from cloned secrets repo to web directory.
     run: |
-      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_REPO'..."
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
 
       export SECRETS_DIR=$SECRETS_REPO/google/web/
       export SOURCE_DIR=$MELOS_ROOT_PATH/web/
@@ -128,8 +128,6 @@ scripts:
       for f in $(find $SOURCE_DIR -name '*.enc'); do 
         rm -rfv $f | xargs echo "Removed $1"
       done
-
-
 
   #
   #   Hygiene
@@ -158,3 +156,78 @@ scripts:
     run: |
       melos exec -c 1 -- \
           flutter format --output=none --set-exit-if-changed .
+  version:manual:
+    description: 
+      Manually set semver version number
+      For local development, use .env to set variables
+        VERSION - semver version
+    run: |
+      dart ./script/version_semver.dart
+  version:build:
+    description: 
+      Bump build number
+    run: |
+      DATE=$(date '+%y%m%d')
+      TIMEHASH=$(( $(date '+%H') * 4 + $(date '+%M') / 15 )) 
+      export BUILDHASH="$DATE$TIMEHASH"
+      echo $HASH
+
+      dart ./script/version_build.dart
+
+  #
+  #   Build
+  #
+
+  #   iOS
+
+  build:ipa:dev:
+    description: |
+      Builds ipa for dev distribution.
+      For local development, use .env to set variables:
+        SECRETS_PASSWORD - Encryption passphrase.
+    run: | 
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
+
+      export MATCH_GIT_URL=$SECRETS_DIR
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
+
+      flutter build ios --verbose --release --flavor=dev --target=lib/main_dev.dart
+
+      cd ios
+      bundle exec fastlane buildDev
+
+  build:ipa:pre:
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
+
+      export MATCH_GIT_URL=$SECRETS_DIR
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
+
+      flutter build ipa --verbose --release --flavor=stg --target=lib/main_stg.dart
+
+      cd ios
+      bundle exec fastlane buildStg
+
+  build:ipa:pro:
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
+
+      export MATCH_GIT_URL=$SECRETS_DIR
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
+
+      flutter build ipa --verbose --release --flavor=prd --target=lib/main_prd.dart
+
+      cd ios
+      bundle exec fastlane buildPrd
