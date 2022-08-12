@@ -1,0 +1,53 @@
+name: Build + Check
+
+on:
+  push:
+    branches:
+      - dev
+      - stg
+      - prd
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  check:
+  
+    name: Quality Check
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checking out repo.
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Deep Fetch
+      
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Setup Dart Code Metrics
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone https://github.com/dart-code-checker/dart-code-metrics-action --branch v2.0.0 --single-branch
+          cd ./dart-code-metrics-action/action_app/
+          flutter pub get
+      
+      - name: Run Dart Code Metrics
+        env:
+          INPUT_FOLDERS: "lib"
+          INPUT_GITHUB_TOKEN: ${{ github.token }}
+          # Defaults
+          INPUT_RELATIVE_PATH: ""
+          INPUT_PULL_REQUEST_COMMENT: false
+          INPUT_ANALYZE_REPORT_TITLE_PATTERN: "Analyze report of $packageName"
+          INPUT_FATAL_WARNINGS: false
+          INPUT_FATAL_PERFORMANCE: false
+          INPUT_FATAL_STYLE: false
+          INPUT_CHECK_UNUSED_FILES: false
+          INPUT_UNUSED_FILES_REPORT_TITLE_PATTERN: "Dart Code Metrics unused files report of $packageName."
+        run: |
+          dart run ${{ runner.temp }}/dart-code-metrics-action/action_app/bin/main.dart
