@@ -28,6 +28,12 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
+
+      - name: Bootstraping Melos
+        run: |
+          dart pub global activate melos
+          melos bootstrap
 
       - name: Setup Dart Code Metrics
         working-directory: ${{ runner.temp }}
@@ -51,3 +57,7 @@ jobs:
           INPUT_UNUSED_FILES_REPORT_TITLE_PATTERN: "Dart Code Metrics unused files report of $packageName."
         run: |
           dart run ${{ runner.temp }}/dart-code-metrics-action/action_app/bin/main.dart
+      
+      - name: Quality Check
+        run: |
+          melos check:quality
