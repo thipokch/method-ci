@@ -151,6 +151,14 @@ scripts:
     # melos run build:all
     # melos run test:all
 
+  metrics:
+    description: |
+      Run `dart_code_metrics` in all packages.
+      - Note: you can also rely on your IDEs Dart Analysis / Issues window.
+    run: |
+      melos exec -c 1 --ignore="*test*" -- \
+        flutter pub run dart_code_metrics:metrics analyze lib
+
   lint:all:
     description: Run all lint checks.
     run: |
@@ -174,6 +182,7 @@ scripts:
     run: |
       melos exec -c 1 -- \
           flutter format --output=none --set-exit-if-changed .
+
   version:manual:
     description: 
       Manually set semver version number
