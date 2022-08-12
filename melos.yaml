@@ -148,6 +148,7 @@ scripts:
       melos clean
       melos bootstrap
       melos run lint:all
+      melos run metrics
     # melos run build:all
     # melos run test:all
 
