@@ -17,23 +17,22 @@ jobs:
   
     name: Quality Check for ${{ github.ref_name }}
     outputs:
-      build_hash: ${{ steps.hash.outputs.build_hash }}
+      build_num: ${{ steps.hash.outputs.build_num }}
 
     runs-on: ubuntu-latest
     steps:
-
-      - name: Generate hash
-        id: hash
-        run: |
-          DATE=$(date '+%y%m%d')
-          TIMEHASH=$(printf %02d $(( $(date '+%H') * 4 + $(date '+%M') / 15 )) )
-          export BUILDHASH="$DATE$TIMEHASH"
-          echo "::set-output name=build_hash::$BUILDHASH"
-
       - name: Checking out repo.
         uses: actions/checkout@v3
         with:
           fetch-depth: 0  # Deep Fetch
+      
+      - name: Generate build num
+        id: hash
+        run: |
+          DATE=$( TZ=UTC0 git show --quiet --date='format-local:%y%m%d' --format='%cd' )
+          COUNT=$( TZ=UTC0 git log --date='format-local:%y%m%d' --format='%cd' | grep -c $DATE )
+          export BUILD_NUM="$DATE$COUNT"
+          echo "::set-output name=build_num::$BUILD_NUM"
       
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
@@ -60,7 +59,7 @@ jobs:
           # Defaults
           INPUT_RELATIVE_PATH: ""
           INPUT_PULL_REQUEST_COMMENT: false
-          INPUT_ANALYZE_REPORT_TITLE_PATTERN: "$packageName #${{ steps.hash.outputs.build_hash }}: Code Metrics"
+          INPUT_ANALYZE_REPORT_TITLE_PATTERN: "$packageName #${{ steps.hash.outputs.build_num }}: Code Metrics"
           INPUT_FATAL_WARNINGS: false
           INPUT_FATAL_PERFORMANCE: false
           INPUT_FATAL_STYLE: false
@@ -75,7 +74,7 @@ jobs:
 
   build:
   
-    name: "Building ${{ matrix.target }} for ${{ github.ref_name }} #${{ needs.check.outputs.build_hash }}"
+    name: "Building ${{ matrix.target }} for ${{ github.ref_name }} #${{ needs.check.outputs.build_num }}"
     needs: check
     strategy:
       fail-fast: true
@@ -131,7 +130,7 @@ jobs:
       
       - name: Flutter Build ${{ matrix.target }}
         env:
-          BUILDHASH: ${{ needs.check.outputs.build_hash }}
+          BUILD_NUM: ${{ needs.check.outputs.build_num }}
           SECRETS_PASSWORD: ${{ secrets.SECRETS_PASSWORD }}
         run: |
           melos version:build
@@ -147,7 +146,7 @@ jobs:
 
   release:
 
-    name: "Process ${{ github.ref_name }} #${{ needs.check.outputs.build_hash }} for release"
+    name: "Process ${{ github.ref_name }} #${{ needs.check.outputs.build_num }} for release"
     needs: [ check, build ]
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
@@ -172,7 +171,7 @@ jobs:
           default-branch: ${{ github.ref_name }}
           package-name: ${{ github.ref_name }}
           changelog-path: CHANGELOG.${{ github.ref_name }}.md
-          pull-request-title-pattern: "chore${scope}: release${component} ${version} #${{ needs.check.outputs.build_hash }}"
+          pull-request-title-pattern: "chore${scope}: release${component} ${version} #${{ needs.check.outputs.build_num }}"
 
       - name: Extract release version
         uses: frabert/replace-string-action@v2.0
@@ -202,7 +201,7 @@ jobs:
 
   promote:
 
-    name: "Promote ${{ needs.release.outputs.current_env }} #${{ needs.check.outputs.build_hash }} to ${{ needs.release.outputs.next_env }}"
+    name: "Promote ${{ needs.release.outputs.current_env }} #${{ needs.check.outputs.build_num }} to ${{ needs.release.outputs.next_env }}"
     needs: [ check, build, release ]
 
     if: ${{ needs.release.outputs.releases_created && (needs.release.outputs.next_env != '---') }}
@@ -238,7 +237,7 @@ jobs:
 
   deploy:
 
-    name: "Deploying ${{ needs.release.outputs.current_env }} #${{ needs.check.outputs.build_hash }}"
+    name: "Deploying ${{ needs.release.outputs.current_env }} #${{ needs.check.outputs.build_num }}"
     needs: [ check, build, release ]
     strategy:
       fail-fast: false
@@ -264,7 +263,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
 
-      - name: "Download Artifacts for ${{ matrix.target }} #${{ needs.check.outputs.build_hash }}"
+      - name: "Download Artifacts for ${{ matrix.target }} #${{ needs.check.outputs.build_num }}"
         uses: actions/download-artifact@v3
         with:
           path: ${{ github.workspace }}${{ matrix.build-dir }}
@@ -294,6 +293,6 @@ jobs:
           dart pub global activate melos
           melos bootstrap
 
-      - name: "Deploying ${{ matrix.target }} #${{ needs.check.outputs.build_hash }}"
+      - name: "Deploying ${{ matrix.target }} #${{ needs.check.outputs.build_num }}"
         run: |
           melos run deploy:${{ matrix.deploy-command }}:${{ needs.release.outputs.current_env }}
