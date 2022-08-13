@@ -75,7 +75,7 @@ jobs:
 
   build:
   
-    name: Building ${{ matrix.target }} for ${{ github.ref_name }} (${{ needs.check.outputs.build_hash }})
+    name: "Building ${{ matrix.target }} for ${{ github.ref_name }} #${{ needs.check.outputs.build_hash }}"
     needs: check
     strategy:
       fail-fast: true
@@ -222,7 +222,6 @@ jobs:
 
       - name: Render CHANGELOG.
         id: changelog
-
         uses: chuhlomin/render-template@v1.4
         with:
           template: CHANGELOG.${{ needs.release.outputs.current_env }}.md
@@ -239,27 +238,62 @@ jobs:
 
   deploy:
 
-    name: "Deploying ${{ github.ref_name }} #${{ needs.check.outputs.build_hash }}"
+    name: "Deploying ${{ needs.release.outputs.current_env }} #${{ needs.check.outputs.build_hash }}"
     needs: [ check, build, release ]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+
+          - os: macos-12
+            target: iOS
+            deploy-command: ios
+            build-dir: /build/ipa/
+
+          # - os: ubuntu-22.04
+          #   target: Android
+          #   deploy-command: and
+          #   build-dir: /build/app/outputs/apk/
+
+          # - os: ubuntu-22.04
+          #   target: Web
+          #   deploy-command: web
+          #   build-dir: /build/web/
 
     if: ${{ needs.release.outputs.releases_created }}
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
     steps:
 
-      - name: Download Artifacts
+      - name: "Download Artifacts for ${{ matrix.target }} #${{ needs.check.outputs.build_hash }}"
         uses: actions/download-artifact@v3
-        if: steps.release.outputs.releases_created
         with:
-          path: ${{ runner.temp }}/artifacts
-      
-      - name: Upload Release Assets
-        uses: meeDamian/github-release@2.0
-        if: steps.release.outputs.releases_created
+          path: ${{ github.workspace }}${{ matrix.build-dir }}
+          name: ${{ matrix.target }}
+
+      - name: Checking out repo.
+        uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ steps.release.outputs.tag_name }}
-          gzip: folders
-          files: ${{ runner.temp }}/artifacts
+          fetch-depth: 0  # Deep Fetch
       
-      # - run: echo "A release was created."
-      #   if: ${{ steps.release.outputs.releases_created }}
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Setup ruby
+        if: ${{ startsWith(runner.os, 'macos') }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0' # Not needed with a .ruby-version file
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+          working-directory: ${{ github.workspace }}/ios
+
+      - name: Bootstraping Melos
+        run: |
+          dart pub global activate melos
+          melos bootstrap
+
+      - name: "Deploying ${{ matrix.target }} #${{ needs.check.outputs.build_hash }}"
+        run: |
+          melos run deploy:${{ matrix.deploy-command }}:${{ needs.release.outputs.current_env }}
