@@ -13,7 +13,6 @@ command:
     # See: https://github.com/dart-lang/pub/issues/3404).
 
 scripts:
-
   #
   #   Melos Lifecycle
   #
@@ -43,99 +42,34 @@ scripts:
   setup:secrets:
     description: |
       Clone secrets repo.
+      Decode and decrypt google services config in cloned secrets repo.
       For local development, use .env to set variables:
         SECRETS_GITHUB_TOKEN - Personal acccess token.
         SECRETS_GITHUB_PATH - Path of Github repo.
-    run: |
-      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
-        echo "Environment variables from .env exported..."
-
-      echo "Cleaning previous secrets repo..."
-      rm -rf ./.secrets
-
-      echo "Using '$SECRETS_GITHUB_PATH'..."
-      git clone https://$SECRETS_GITHUB_TOKEN@github.com/$SECRETS_GITHUB_PATH ./.secrets
-
-  setup:secrets:match:
-    description: |
-      Setup match (from fastlane) based on cloned secrets repo.
-    run: |
-      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
-        echo "Environment variables from .env exported..."
-
-      export MATCH_GIT_URL=files://$MELOS_ROOT_PATH/.secrets
-      echo "MATCH_GIT_URL set to $MATCH_GIT_URL"
-
-      cd ios
-      bundle exec
-  
-  setup:secrets:google:
-    description: |
-      Decode and decrypt google services config in cloned secrets repo.
-      For local development, use .env to set variables:
         SECRETS_PASSWORD - Encryption passphrase.
     run: |
       [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
         echo "Environment variables from .env exported..."
 
-      export SECRETS_REPO=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_REPO'..."
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
 
-      for f in $(find $SECRETS_REPO -name '*.enc'); do 
+      echo "Cleaning previous secrets repo..."
+      rm -rf $SECRETS_DIR
+
+      echo "Using '$SECRETS_GITHUB_PATH'..."
+      git clone https://$SECRETS_GITHUB_TOKEN@github.com/$SECRETS_GITHUB_PATH $SECRETS_DIR
+
+      for f in $(find $SECRETS_DIR -name '*.enc'); do 
         echo "Decrypting ${f%.enc}..."
         openssl aes-256-cbc -md md5 -d -a -v -k $SECRETS_PASSWORD -in $f -out ${f%.enc}
-      done
-      
-  setup:android:google:
-    description: |
-      Copies decrypted google services config from cloned secrets repo to android directory.
-    run: |
-      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_DIR'..."
-
-      export SECRETS_DIR=$SECRETS_REPO/google/android/
-      export SOURCE_DIR=$MELOS_ROOT_PATH/android/app/src/
-
-      echo "Copying all google services config files under ${SECRETS_DIR} to ${SOURCE_DIR}"
-      cp -v -r "${SECRETS_DIR}"* "${SOURCE_DIR}"
-
-      for f in $(find $SOURCE_DIR -name '*.enc'); do 
-        rm -rfv $f | xargs echo "Removed $1"
+        rm -rfv $f | xargs echo "Decrypted and removed: $1"
       done
 
-  setup:ios:google:
-    description: |
-      Copies decrypted google services config from cloned secrets repo to ios directory.
-    run: |
-      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_DIR'..."
-
-      export SECRETS_DIR=$SECRETS_REPO/google/darwin/
-      export SOURCE_DIR=$MELOS_ROOT_PATH/ios/
-
-      echo "Copying all google services config files under ${SECRETS_DIR} to ${SOURCE_DIR}"
-      cp -v -r "${SECRETS_DIR}"* "${SOURCE_DIR}"
-
-      for f in $(find $SOURCE_DIR -name '*.enc'); do 
-        rm -rfv $f | xargs echo "Removed $1"
-      done
-
-  setup:web:google:
-    description: |
-      Copies decrypted google services config from cloned secrets repo to web directory.
-    run: |
-      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_DIR'..."
-
-      export SECRETS_DIR=$SECRETS_REPO/google/web/
-      export SOURCE_DIR=$MELOS_ROOT_PATH/web/
-
-      echo "Copying all google services config files under ${SECRETS_DIR} to ${SOURCE_DIR}"
-      cp -v -r "${SECRETS_DIR}"* "${SOURCE_DIR}"
-
-      for f in $(find $SOURCE_DIR -name '*.enc'); do 
-        rm -rfv $f | xargs echo "Removed $1"
-      done
+      echo "Copying Google service configurations..."
+      cp -v -r "$SECRETS_DIR/google/android/"* "$MELOS_ROOT_PATH/android/app/src/"
+      cp -v -r "$SECRETS_DIR/google/darwin/"* "$MELOS_ROOT_PATH/ios/"
+      cp -v -r "$SECRETS_DIR/google/web/"* "$MELOS_ROOT_PATH/web/"
 
   #
   #   Hygiene
@@ -147,7 +81,8 @@ scripts:
       melos run clean:deep -- --exclude=.env
       melos clean
       melos bootstrap
-      melos run lint:all
+      melos run format
+      melos run analyze
       melos run metrics
     # melos run build:all
     # melos run test:all
@@ -159,12 +94,6 @@ scripts:
     run: |
       melos exec -c 1 --ignore="*test*" -- \
         flutter pub run dart_code_metrics:metrics analyze lib
-
-  lint:all:
-    description: Run all lint checks.
-    run: |
-      melos run analyze
-      melos run format
 
   analyze:
     # We are setting the concurrency to 1 because a higher concurrency can crash
@@ -195,12 +124,9 @@ scripts:
   version:build:
     description: 
       Bump build number
+      For local development, use .env to set variables
+        BUILDHASH - build number
     run: |
-      DATE=$(date '+%y%m%d')
-      TIMEHASH=$(( $(date '+%H') * 4 + $(date '+%M') / 15 )) 
-      export BUILDHASH="$DATE$TIMEHASH"
-      echo $HASH
-
       dart ./script/version_build.dart
 
   #
@@ -209,54 +135,75 @@ scripts:
 
   #   iOS
 
-  build:ipa:dev:
+  build:ios:dev:
     description: |
-      Builds ipa for dev distribution.
-      For local development, use .env to set variables:
-        SECRETS_PASSWORD - Encryption passphrase.
+      Builds ios for development.
     run: | 
       [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
         echo "Environment variables from .env exported..."
 
-      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_DIR'..."
-
-      export MATCH_GIT_URL=$SECRETS_DIR
-      export MATCH_PASSWORD=$SECRETS_PASSWORD
-
       flutter build ios --verbose --release --flavor=dev --target=lib/main_dev.dart
+
+      export MATCH_GIT_URL=$MELOS_ROOT_PATH/.secrets
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
 
       cd ios
       bundle exec fastlane buildDev
 
-  build:ipa:pre:
+  build:ios:stg:
+    description: |
+      Builds ios for staging.
     run: |
       [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
         echo "Environment variables from .env exported..."
 
-      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_DIR'..."
+      flutter build ios --verbose --release --flavor=stg --target=lib/main_stg.dart
 
-      export MATCH_GIT_URL=$SECRETS_DIR
+      export MATCH_GIT_URL=$MELOS_ROOT_PATH/.secrets
       export MATCH_PASSWORD=$SECRETS_PASSWORD
-
-      flutter build ipa --verbose --release --flavor=stg --target=lib/main_stg.dart
 
       cd ios
       bundle exec fastlane buildStg
 
-  build:ipa:pro:
+  build:ios:prd:
+    description: |
+      Builds ios for production.
     run: |
       [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
         echo "Environment variables from .env exported..."
 
-      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
-      echo "Using '$SECRETS_DIR'..."
+      flutter build ios --verbose --release --flavor=prd --target=lib/main_prd.dart
 
-      export MATCH_GIT_URL=$SECRETS_DIR
+      export MATCH_GIT_URL=$MELOS_ROOT_PATH/.secrets
       export MATCH_PASSWORD=$SECRETS_PASSWORD
-
-      flutter build ipa --verbose --release --flavor=prd --target=lib/main_prd.dart
 
       cd ios
       bundle exec fastlane buildPrd
+
+  #   android
+
+  build:and:dev:
+    description: Builds android for development.
+    run: flutter build apk --verbose --release --flavor=dev --target=lib/main_dev.dart
+
+  build:and:stg:
+    description: Builds android for development.
+    run: flutter build apk --verbose --release --flavor=stg --target=lib/main_stg.dart
+
+  build:and:prd:
+    description: Builds android for development.
+    run: flutter build apk --verbose --release --flavor=prd --target=lib/main_prd.dart
+
+  #   web
+
+  build:web:dev:
+    description: Builds android for development.
+    run: flutter build web --verbose --release --target=lib/main_dev.dart
+
+  build:web:stg:
+    description: Builds android for development.
+    run: flutter build web --verbose --release --target=lib/main_stg.dart
+
+  build:web:prd:
+    description: Builds android for development.
+    run: flutter build web --verbose --release --target=lib/main_prd.dart
