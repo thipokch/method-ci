@@ -15,9 +15,19 @@ jobs:
 
   check:
   
-    name: Quality Check
+    name: Quality Check for ${{ github.ref_name }}
     runs-on: ubuntu-latest
+    outputs:
+      build_hash: ${{ steps.hash.outputs.build_hash }}
     steps:
+
+      - name: Generate hash
+        id: hash
+        run: |
+          DATE=$(date '+%y%m%d')
+          TIMEHASH=$(( $(date '+%H') * 4 + $(date '+%M') / 15 )) 
+          export BUILDHASH="$DATE$TIMEHASH"
+          echo "::set-output name=build_hash::$BUILDHASH"
 
       - name: Checking out repo.
         uses: actions/checkout@v3
@@ -49,7 +59,7 @@ jobs:
           # Defaults
           INPUT_RELATIVE_PATH: ""
           INPUT_PULL_REQUEST_COMMENT: false
-          INPUT_ANALYZE_REPORT_TITLE_PATTERN: "Analyze report of $packageName"
+          INPUT_ANALYZE_REPORT_TITLE_PATTERN: "$packageName #${{ steps.hash.outputs.build_hash }}: Code Metrics"
           INPUT_FATAL_WARNINGS: false
           INPUT_FATAL_PERFORMANCE: false
           INPUT_FATAL_STYLE: false
@@ -61,3 +71,75 @@ jobs:
       - name: Quality Check
         run: |
           melos check:quality
+
+  build:
+  
+    name: Building ${{ matrix.target }} for ${{ github.ref_name }} (${{ needs.check.outputs.build_hash }})
+    runs-on: ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+
+          - os: macos-12
+            target: iOS
+            build-command: ios
+            build-dir: /build/ipa/
+
+          - os: ubuntu-22.04
+            target: Android
+            build-command: and
+            build-dir: /build/app/outputs/apk/
+
+          - os: ubuntu-22.04
+            target: Web
+            build-command: web
+            build-dir: /build/web/
+            
+    steps:
+
+      - name: Checking out repo.
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Deep Fetch
+      
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Setup ruby
+        if: ${{ startsWith(runner.os, 'macos') }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0' # Not needed with a .ruby-version file
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+          working-directory: ${{ github.workspace }}/ios
+
+      - name: Bootstraping Melos
+        env:
+          SECRETS_GITHUB_TOKEN: ${{ secrets.SECRETS_GITHUB_TOKEN }}
+          SECRETS_GITHUB_PATH: ${{ secrets.SECRETS_GITHUB_PATH }}
+          SECRETS_PASSWORD: ${{ secrets.SECRETS_PASSWORD }}
+        run: |
+          dart pub global activate melos
+          melos bootstrap
+          melos setup:secrets
+      
+      - name: Flutter Build ${{ matrix.target }}
+        env:
+          BUILDHASH: ${{ needs.check.outputs.build_hash }}
+          SECRETS_PASSWORD: ${{ secrets.SECRETS_PASSWORD }}
+        run: |
+          melos version:build
+          melos build:${{ matrix.build-command }}:${{ github.ref_name }}
+
+      - name: Upload ${{ matrix.target }} artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.target }}
+          if-no-files-found: ignore
+          path: |
+            ${{ github.workspace }}${{ matrix.build-dir }}
