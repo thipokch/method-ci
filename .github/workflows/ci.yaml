@@ -206,8 +206,8 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git tag ${{ github.ref_name }}-b${{ needs.check.outputs.build_num }}
-          git push origin ${{ github.ref_name }}-b${{ needs.check.outputs.build_num }}
+          git tag ${{ needs.check.outputs.build_num }}
+          git push origin ${{ needs.check.outputs.build_num }}
 
   promote:
 
@@ -277,6 +277,10 @@ jobs:
         with:
           path: ${{ github.workspace }}${{ matrix.build-dir }}
           name: ${{ matrix.target }}
+      
+      - name: Structure of downloaded files
+        working-directory: ${{ github.workspace }}${{ matrix.build-dir }}
+        run: ls -R
 
       - name: Checking out repo.
         uses: actions/checkout@v3
