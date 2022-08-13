@@ -207,3 +207,43 @@ scripts:
   build:web:prd:
     description: Builds android for development.
     run: flutter build web --verbose --release --target=lib/main_prd.dart
+
+  #
+  #   Deploy
+  #
+
+  deploy:ios:dev:
+    description: |
+      Deploy ios development to testflight.
+      For local development, use .env to set variables:
+        ASC_KEY_ID - App Store Connect key id
+        ASC_ISSUER_ID - App Store Connect key issuer id
+        ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+      cd ios && bundle exec fastlane deployDev
+
+  deploy:ios:stg:
+    description: |
+      Deploy ios staging to testflight.
+      For local development, use .env to set variables:
+        ASC_KEY_ID - App Store Connect key id
+        ASC_ISSUER_ID - App Store Connect key issuer id
+        ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+      cd ios && bundle exec fastlane deployStg
+
+  deploy:ios:prd:
+    description: |
+      Deploy ios production to app store.
+      For local development, use .env to set variables:
+        ASC_KEY_ID - App Store Connect key id
+        ASC_ISSUER_ID - App Store Connect key issuer id
+        ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+      cd ios && bundle exec fastlane deployPrd
