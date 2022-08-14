@@ -243,7 +243,9 @@ scripts:
         ASC_KEY_ID - App Store Connect key id
         ASC_ISSUER_ID - App Store Connect key issuer id
         ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+        CHANGELOG - Changelog Content
     run: |
       [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
         echo "Environment variables from .env exported..."
+
       cd ios && bundle exec fastlane deployPrd
