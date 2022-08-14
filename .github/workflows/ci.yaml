@@ -30,7 +30,7 @@ jobs:
         id: hash
         run: |
           DATE=$( TZ=UTC0 git show --quiet --date='format-local:%y%m%d' --format='%cd' )
-          COUNT=$( TZ=UTC0 git log --date='format-local:%y%m%d' --format='%cd' | grep -c $DATE )
+          COUNT=$( printf %02d $(TZ=UTC0 git log --date='format-local:%y%m%d' --format='%cd' | grep -c $DATE ) )
           export BUILD_NUM="$DATE$COUNT"
           echo "::set-output name=build_num::$BUILD_NUM"
       
@@ -152,9 +152,10 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       version: ${{ steps.get-version.outputs.replaced }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-      pr: ${{ steps.release.outputs.release-pr }}
       next_env: ${{ steps.get-next-branch.outputs.replaced }}
       current_env: ${{ github.ref_name }}
+      pr: ${{ steps.release.outputs.pr }}
+      changelog: ${{ steps.render-changelog.outputs.replaced || needs.check.outputs.build_num }}
 
     runs-on: ubuntu-22.04
     steps:
@@ -174,6 +175,18 @@ jobs:
           package-name: ${{ github.ref_name }}
           changelog-path: CHANGELOG.${{ github.ref_name }}.md
           pull-request-title-pattern: "chore${scope}: release${component} ${version}"
+      
+      - name: Release info
+        env:
+          PR: ${{ steps.release.outputs.pr }}
+
+        run: |
+          echo "Release Created: ${{ steps.release.outputs.releases_created || false }}"
+          echo "Upload url: ${{ steps.release.outputs.upload_url || false }}"
+          echo "Html url: ${{ steps.release.outputs.html_url || false }}"
+          echo "Tagged: ${{ steps.release.outputs.tag_name }}"
+          echo "Sha: ${{ steps.release.outputs.sha }}"
+          echo "Pull Request: $PR"
 
       - name: Extract release version
         uses: frabert/replace-string-action@v2.0
@@ -182,6 +195,23 @@ jobs:
           pattern: '^[^\d]*'
           string: ${{ steps.release.outputs.tag_name }}
           replace-with: ""
+
+      - name: Read CHANGELOG.
+        id: get-changelog
+        uses: chuhlomin/render-template@v1.4
+        if: ${{ steps.release.outputs.releases_created }}
+        with:
+          template: CHANGELOG.${{ needs.release.outputs.current_env }}.md
+
+      - name: Render CHANGELOG
+        id: render-changelog
+        uses: frabert/replace-string-action@v2.0
+        if: ${{ steps.release.outputs.releases_created }}
+        with:
+          # https://regex101.com/r/S5GXF9/1
+          pattern: '# Changelog\n\n(## .*[\W\w]*?)^## .*[\W\w]*$'
+          string: "${{ steps.get-changelog.outputs.result }} \n## END"
+          replace-with: "$1\n---\nBuild # ${{ needs.check.outputs.build_num }}"
       
       - name: Determine next environment
         uses: frabert/replace-string-action@v2.0
@@ -192,14 +222,14 @@ jobs:
           string: 'devstgprd---'
           replace-with: '$2'
 
-      - name: Release info
+      - name: Computed release info
+        env:
+          CHANGELOG: ${{ steps.render-changelog.outputs.replaced || needs.check.outputs.build_num }}
         run: |
-          echo "Release Created: ${{ steps.release.outputs.releases_created }}"
           echo "Version: ${{ steps.get-version.outputs.replaced }}"
-          echo "Tagged ${{ steps.release.outputs.tag_name }}"
-          echo "Pull Request: ${{ steps.release.outputs.release-pr }}"
           echo "Current environment: ${{ github.ref_name }}"
           echo "Next environment: ${{ steps.get-next-branch.outputs.replaced }}"
+          echo "Changelog: $CHANGELOG"
       
       - name: "Tag merged commit with ${{ github.ref_name }}-b${{ needs.check.outputs.build_num }}."
         if: ${{ steps.release.outputs.releases_created }}
@@ -229,19 +259,13 @@ jobs:
           git fetch origin ${{ needs.release.outputs.current_env }}:${{ needs.release.outputs.current_env }}
           git reset --hard ${{ needs.release.outputs.current_env }}
 
-      - name: Render CHANGELOG.
-        id: changelog
-        uses: chuhlomin/render-template@v1.4
-        with:
-          template: CHANGELOG.${{ needs.release.outputs.current_env }}.md
-
       - name: Create {{ needs.release.outputs.next_env }} pull request
         id: pr
         uses: peter-evans/create-pull-request@v4
         with:
           branch: promote-${{ needs.release.outputs.next_env }}
           title: "chore(${{ needs.release.outputs.next_env }}): promote ${{ needs.release.outputs.tag_name }} to ${{ needs.release.outputs.next_env }}"
-          body: ${{ steps.changelog.outputs.result }}
+          body: ${{ needs.release.outputs.changelog }}
           labels: autopromote
 
   deploy:
@@ -307,5 +331,6 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          CHANGELOG: ${{ needs.release.outputs.changelog }}
         run: |
           melos run deploy:${{ matrix.deploy-command }}:${{ needs.release.outputs.current_env }}
