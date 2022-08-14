@@ -1,0 +1,251 @@
+name: method
+repository: https://github.com/thipokch/method
+
+packages:
+  - '*'
+  - packages/**
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+    runPubGetInParallel: false
+    # It seems so that running "pub get" in parallel cause race condition.
+    # See: https://github.com/dart-lang/pub/issues/3404).
+
+scripts:
+  #
+  #   Melos Lifecycle
+  #
+
+  postbootstrap: |
+    melos run setup:githook
+
+  postclean: |
+    echo "Cleaning previous secrets repo..."
+    rm -rf ./.secrets
+
+    melos exec -c 6 -- "flutter clean"
+
+  #
+  #   Setup
+  #
+
+  clean:deep:
+    description: Clean things very deeply, can be used to establish "pristine checkout" status.
+    run: git clean -x -d -f -q
+
+  setup:githook:
+    run: |
+      chmod -R +x .githook/
+      git config core.hooksPath .githook/
+      
+  setup:secrets:
+    description: |
+      Clone secrets repo.
+      Decode and decrypt google services config in cloned secrets repo.
+      For local development, use .env to set variables:
+        SECRETS_GITHUB_TOKEN - Personal acccess token.
+        SECRETS_GITHUB_PATH - Path of Github repo.
+        SECRETS_PASSWORD - Encryption passphrase.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      export SECRETS_DIR=$MELOS_ROOT_PATH/.secrets
+      echo "Using '$SECRETS_DIR'..."
+
+      echo "Cleaning previous secrets repo..."
+      rm -rf $SECRETS_DIR
+
+      echo "Using '$SECRETS_GITHUB_PATH'..."
+      git clone https://$SECRETS_GITHUB_TOKEN@github.com/$SECRETS_GITHUB_PATH $SECRETS_DIR
+
+      for f in $(find $SECRETS_DIR -name '*.enc'); do 
+        echo "Decrypting ${f%.enc}..."
+        openssl aes-256-cbc -md md5 -d -a -v -k $SECRETS_PASSWORD -in $f -out ${f%.enc}
+        rm -rfv $f | xargs echo "Decrypted and removed: $1"
+      done
+
+      echo "Copying Google service configurations..."
+      cp -v -r "$SECRETS_DIR/google/android/"* "$MELOS_ROOT_PATH/android/app/src/"
+      cp -v -r "$SECRETS_DIR/google/darwin/"* "$MELOS_ROOT_PATH/ios/"
+      cp -v -r "$SECRETS_DIR/google/web/"* "$MELOS_ROOT_PATH/web/"
+
+  #
+  #   Hygiene
+  #
+
+  check:quality:
+    description: Run all targets generally expected in CI for a full local quality check.
+    run: |
+      melos run clean:deep -- --exclude=.env
+      melos clean
+      melos bootstrap
+      melos run format
+      melos run analyze
+      melos run metrics
+    # melos run build:all
+    # melos run test:all
+
+  metrics:
+    description: |
+      Run `dart_code_metrics` in all packages.
+      - Note: you can also rely on your IDEs Dart Analysis / Issues window.
+    run: |
+      melos exec -c 1 --ignore="*test*" -- \
+        flutter pub run dart_code_metrics:metrics analyze lib
+
+  analyze:
+    # We are setting the concurrency to 1 because a higher concurrency can crash
+    # the analysis server on low performance machines (like GitHub Actions).
+    description: |
+      Run `flutter analyze` in all packages.
+       - Note: you can also rely on your IDEs Dart Analysis / Issues window.
+    run: |
+      melos exec -c 1 -- \
+        flutter analyze . --fatal-infos
+
+  format:
+    description: |
+      Run `flutter format` in all packages.
+        - Note: Exits with non-zero exit code if formatting is needed.
+    run: |
+      melos exec -c 1 -- \
+          flutter format --output=none --set-exit-if-changed .
+
+  version:manual:
+    description: 
+      Manually set semver version number
+      For local development, use .env to set variables
+        VERSION - semver version
+    run: |
+      dart ./script/version_semver.dart
+
+  version:build:
+    description: 
+      Bump build number
+      For local development, use .env to set variables
+        BUILD_NUM - build number
+    run: |
+      dart ./script/version_build.dart
+
+  #
+  #   Build
+  #
+
+  #   iOS
+
+  build:ios:dev:
+    description: |
+      Builds ios for development.
+    run: | 
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      flutter build ios --verbose --release --flavor=dev --target=lib/main_dev.dart
+
+      export MATCH_GIT_URL=$MELOS_ROOT_PATH/.secrets
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
+
+      cd ios
+      bundle exec fastlane buildDev
+
+  build:ios:stg:
+    description: |
+      Builds ios for staging.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      flutter build ios --verbose --release --flavor=stg --target=lib/main_stg.dart
+
+      export MATCH_GIT_URL=$MELOS_ROOT_PATH/.secrets
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
+
+      cd ios
+      bundle exec fastlane buildStg
+
+  build:ios:prd:
+    description: |
+      Builds ios for production.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      flutter build ios --verbose --release --flavor=prd --target=lib/main_prd.dart
+
+      export MATCH_GIT_URL=$MELOS_ROOT_PATH/.secrets
+      export MATCH_PASSWORD=$SECRETS_PASSWORD
+
+      cd ios
+      bundle exec fastlane buildPrd
+
+  #   android
+
+  build:and:dev:
+    description: Builds android for development.
+    run: flutter build apk --verbose --release --flavor=dev --target=lib/main_dev.dart
+
+  build:and:stg:
+    description: Builds android for development.
+    run: flutter build apk --verbose --release --flavor=stg --target=lib/main_stg.dart
+
+  build:and:prd:
+    description: Builds android for development.
+    run: flutter build apk --verbose --release --flavor=prd --target=lib/main_prd.dart
+
+  #   web
+
+  build:web:dev:
+    description: Builds android for development.
+    run: flutter build web --verbose --release --target=lib/main_dev.dart
+
+  build:web:stg:
+    description: Builds android for development.
+    run: flutter build web --verbose --release --target=lib/main_stg.dart
+
+  build:web:prd:
+    description: Builds android for development.
+    run: flutter build web --verbose --release --target=lib/main_prd.dart
+
+  #
+  #   Deploy
+  #
+
+  deploy:ios:dev:
+    description: |
+      Deploy ios development to testflight.
+      For local development, use .env to set variables:
+        ASC_KEY_ID - App Store Connect key id
+        ASC_ISSUER_ID - App Store Connect key issuer id
+        ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+      cd ios && bundle exec fastlane deployDev
+
+  deploy:ios:stg:
+    description: |
+      Deploy ios staging to testflight.
+      For local development, use .env to set variables:
+        ASC_KEY_ID - App Store Connect key id
+        ASC_ISSUER_ID - App Store Connect key issuer id
+        ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+      cd ios && bundle exec fastlane deployStg
+
+  deploy:ios:prd:
+    description: |
+      Deploy ios production to app store.
+      For local development, use .env to set variables:
+        ASC_KEY_ID - App Store Connect key id
+        ASC_ISSUER_ID - App Store Connect key issuer id
+        ASC_KEY_CONTENT - App Store Connect key encoded in base64.
+        CHANGELOG - Changelog Content
+    run: |
+      [ ! -f .env ] || export $(grep -v '^#' .env | xargs) && \
+        echo "Environment variables from .env exported..."
+
+      cd ios && bundle exec fastlane deployPrd
