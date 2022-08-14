@@ -152,9 +152,10 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       version: ${{ steps.get-version.outputs.replaced }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-      pr: ${{ steps.release.outputs.release-pr }}
       next_env: ${{ steps.get-next-branch.outputs.replaced }}
       current_env: ${{ github.ref_name }}
+      pr: ${{ steps.release.outputs.pr }}
+      changelog: ${{ steps.get-changelog.outputs.replaced }}
 
     runs-on: ubuntu-22.04
     steps:
@@ -183,6 +184,15 @@ jobs:
           string: ${{ steps.release.outputs.tag_name }}
           replace-with: ""
       
+      - name: Reformat Changelog
+        uses: frabert/replace-string-action@v2.0
+        id: get-changelog
+        with:
+          # https://regex101.com/r/NMm5D9/1
+          pattern: '.*(${{ github.ref_name }})(.{3}).*'
+          string: ${{ fromJSON(steps.release.outputs.pr).body }}
+          replace-with: "$<body>$6Build number: ${{ needs.check.outputs.build_num }}"
+      
       - name: Determine next environment
         uses: frabert/replace-string-action@v2.0
         id: get-next-branch
@@ -196,10 +206,11 @@ jobs:
         run: |
           echo "Release Created: ${{ steps.release.outputs.releases_created }}"
           echo "Version: ${{ steps.get-version.outputs.replaced }}"
-          echo "Tagged ${{ steps.release.outputs.tag_name }}"
-          echo "Pull Request: ${{ steps.release.outputs.release-pr }}"
+          echo "Tagged: ${{ steps.release.outputs.tag_name }}"
+          echo "Pull Request: ${{ steps.release.outputs.pr }}"
           echo "Current environment: ${{ github.ref_name }}"
           echo "Next environment: ${{ steps.get-next-branch.outputs.replaced }}"
+          echo "Changelog: ${{ steps.get-changelog.outputs.replaced }}"
       
       - name: "Tag merged commit with ${{ github.ref_name }}-b${{ needs.check.outputs.build_num }}."
         if: ${{ steps.release.outputs.releases_created }}
@@ -307,5 +318,6 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+          CHANGELOG: ${{ needs.release.outputs.changelog }}
         run: |
           melos run deploy:${{ matrix.deploy-command }}:${{ needs.release.outputs.current_env }}
