@@ -177,11 +177,15 @@ jobs:
           pull-request-title-pattern: "chore${scope}: release${component} ${version}"
       
       - name: Release info
+        env:
+          PR: ${{ steps.release.outputs.pr }}
         run: |
-          echo "Release Created: ${{ steps.release.outputs.releases_created }}"
+          echo "Release Created: ${{ steps.release.outputs.releases_created || false }}"
+          echo "Upload url: ${{ steps.release.outputs.upload_url }}"
+          echo "Html url: ${{ steps.release.outputs.html_url }}"
           echo "Tagged: ${{ steps.release.outputs.tag_name }}"
+          echo "Sha: ${{ steps.release.outputs.sha }}"
           echo "Pull Request: $PR"
-          echo "Changelog: ${{ steps.release.outputs.pr }}"
 
       - name: Extract release version
         uses: frabert/replace-string-action@v2.0
