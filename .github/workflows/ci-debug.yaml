@@ -1,0 +1,116 @@
+name: CI Debug
+
+on:
+  push:
+    branches:
+      - thipokch/ci-debug
+
+jobs:
+
+  check:
+  
+    name: Quality Check for ${{ github.ref_name }}
+    outputs:
+      build_num: ${{ steps.hash.outputs.build_num }}
+
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checking out repo.
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Deep Fetch
+      
+      - name: Generate build num
+        id: hash
+        run: |
+          DATE=$( TZ=UTC0 git show --quiet --date='format-local:%y%m%d' --format='%cd' )
+          COUNT=$( printf %02d $(TZ=UTC0 git log --date='format-local:%y%m%d' --format='%cd' | grep -c $DATE ) )
+          export BUILD_NUM="$DATE$COUNT"
+          echo "::set-output name=build_num::$BUILD_NUM"
+      
+  release:
+
+    name: "Process ${{ github.ref_name }} #${{ needs.check.outputs.build_num }} for release"
+    needs: [ check ]
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      version: ${{ steps.get-version.outputs.replaced }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      pr: ${{ steps.release.outputs.pr }}
+      changelog: ${{ steps.render-changelog.outputs.replaced || needs.check.outputs.build_num }}
+      # next_env: ${{ steps.get-next-branch.outputs.replaced }}
+      # current_env: ${{ github.ref_name }}
+
+    runs-on: ubuntu-22.04
+    steps:
+
+      - name: Checking out repo.
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Deep Fetch
+
+      - name: Process release state
+        uses: google-github-actions/release-please-action@v3
+        id: release
+        with:
+          release-type: dart
+          monorepo-tags: true # append branch tag
+          default-branch: ${{ github.ref_name }}
+          package-name: ${{ github.ref_name }}
+          changelog-path: CHANGELOG.${{ github.ref_name }}.md
+          pull-request-title-pattern: "chore${scope}: release${component} ${version}"
+      
+      - name: Release info
+        env:
+          PR: ${{ steps.release.outputs.pr || 'undefined' }}
+        run: |
+          echo "Release Created: ${{ steps.release.outputs.releases_created || 'undefined' }}"
+          echo "Upload url: ${{ steps.release.outputs.upload_url || 'undefined' }}"
+          echo "Html url: ${{ steps.release.outputs.html_url || 'undefined' }}"
+          echo "Tagged: ${{ steps.release.outputs.tag_name || 'undefined' }}"
+          echo "Sha: ${{ steps.release.outputs.sha || 'undefined' }}"
+          echo "Pull Request: $PR"
+
+      - name: Extract release version
+        uses: frabert/replace-string-action@v2.0
+        id: get-version
+        with:
+          pattern: '^[^\d]*'
+          string: ${{ steps.release.outputs.tag_name }}
+          replace-with: ""
+
+      - name: Read CHANGELOG.
+        id: get-changelog
+        uses: chuhlomin/render-template@v1.4
+        if: ${{ steps.release.outputs.releases_created }}
+        with:
+          template: CHANGELOG.${{ github.ref_name }}.md
+
+      - name: Render CHANGELOG
+        id: render-changelog
+        uses: frabert/replace-string-action@v2.0
+        if: ${{ steps.release.outputs.releases_created }}
+        with:
+          # https://regex101.com/r/S5GXF9/1
+          pattern: '# Changelog\n\n(## .*[\W\w]*?)^## .*[\W\w]*$'
+          string: "${{ steps.get-changelog.outputs.result }} \n## END"
+          replace-with: "$1\n---\nBuild # ${{ needs.check.outputs.build_num }}"
+          flags: m  # multiline
+      
+      # - name: Determine next environment
+      #   uses: frabert/replace-string-action@v2.0
+      #   id: get-next-branch
+      #   with:
+      #     # https://regex101.com/r/vzQTby/1
+      #     pattern: '.*(${{ github.ref_name }})(.{3}).*'
+      #     string: 'devstgprd---'
+      #     replace-with: '$2'
+
+      - name: Computed release info
+        env:
+          CHANGELOG: ${{ steps.render-changelog.outputs.replaced || 'undefined' }}
+        run: |
+          echo "Version: ${{ steps.get-version.outputs.replaced || 'undefined' }}"
+          echo "Current environment: ${{ github.ref_name || 'undefined' }}"
+          echo "Changelog: $CHANGELOG"
+        # echo "Next environment: ${{ steps.get-next-branch.outputs.replaced }}"
