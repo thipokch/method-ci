@@ -62,13 +62,13 @@ jobs:
       
       - name: Release info
         env:
-          PR: ${{ steps.release.outputs.pr }}
+          PR: ${{ steps.release.outputs.pr || 'undefined' }}
         run: |
-          echo "Release Created: ${{ steps.release.outputs.releases_created || false }}"
-          echo "Upload url: ${{ steps.release.outputs.upload_url || false }}"
-          echo "Html url: ${{ steps.release.outputs.html_url || false }}"
-          echo "Tagged: ${{ steps.release.outputs.tag_name }}"
-          echo "Sha: ${{ steps.release.outputs.sha }}"
+          echo "Release Created: ${{ steps.release.outputs.releases_created || 'undefined' }}"
+          echo "Upload url: ${{ steps.release.outputs.upload_url || 'undefined' }}"
+          echo "Html url: ${{ steps.release.outputs.html_url || 'undefined' }}"
+          echo "Tagged: ${{ steps.release.outputs.tag_name || 'undefined' }}"
+          echo "Sha: ${{ steps.release.outputs.sha || 'undefined' }}"
           echo "Pull Request: $PR"
 
       - name: Extract release version
@@ -107,17 +107,9 @@ jobs:
 
       - name: Computed release info
         env:
-          CHANGELOG: ${{ steps.render-changelog.outputs.replaced || needs.check.outputs.build_num }}
+          CHANGELOG: ${{ steps.render-changelog.outputs.replaced || 'undefined' }}
         run: |
-          echo "Version: ${{ steps.get-version.outputs.replaced }}"
-          echo "Current environment: ${{ github.ref_name }}"
+          echo "Version: ${{ steps.get-version.outputs.replaced || 'undefined' }}"
+          echo "Current environment: ${{ github.ref_name || 'undefined' }}"
           echo "Changelog: $CHANGELOG"
         # echo "Next environment: ${{ steps.get-next-branch.outputs.replaced }}"
-      
-      - name: "Tag merged commit with ${{ github.ref_name }}-b${{ needs.check.outputs.build_num }}."
-        if: ${{ steps.release.outputs.releases_created }}
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git tag ${{ needs.check.outputs.build_num }}
-          git push origin ${{ needs.check.outputs.build_num }}
